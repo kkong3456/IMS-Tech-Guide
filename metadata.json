@@ -1,0 +1,6 @@
+{
+  "name": "IMS Tech-Guide Chatbot",
+  "description": "4G VoLTE 및 5G VoNR IMS(IP Multimedia Subsystem) 무선 음성 통신 전문 기술 상담 및 장애 분석 가이드 챗봇",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
