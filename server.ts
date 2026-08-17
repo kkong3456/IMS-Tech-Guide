@@ -8,7 +8,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "5mb" }));
 
@@ -16,8 +16,12 @@ app.use(express.json({ limit: "5mb" }));
 const DATA_DIR = path.join(process.cwd(), "data");
 const QUERIES_FILE = path.join(DATA_DIR, "saved_queries.json");
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn("Could not create data directory, using memory fallback if needed:", err);
 }
 
 interface SavedQuery {
@@ -84,15 +88,25 @@ function recordUserQuery(queryText: string): SavedQuery {
   return newEntry;
 }
 
-// Server-Side Gemini Client Initialization
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Lazy initialization for Gemini Client
+let aiClient: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is not configured.");
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiClient;
+}
 
 const IMS_SYSTEM_INSTRUCTION = `당신은 무선 음성 통신 및 IMS(IP Multimedia Subsystem) 최고 기술 전문가이자 시니어 텔레콤 솔루션 아키텍트인 'IMS 테크-가이드(IMS Tech-Guide)'입니다.
 
@@ -233,8 +247,8 @@ app.post("/api/chat/stream", async (req, res) => {
       systemInstruction += `\n\n[추가 기술 진단 컨텍스트 데이터]\n${JSON.stringify(contextData, null, 2)}`;
     }
 
-    const responseStream = await ai.models.generateContentStream({
-      model: "gemini-3.7-flash",
+    const responseStream = await getAI().models.generateContentStream({
+      model: "gemini-3.1-flash-lite",
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
@@ -289,8 +303,8 @@ app.post("/api/chat", async (req, res) => {
       systemInstruction += `\n\n[추가 기술 진단 컨텍스트 데이터]\n${JSON.stringify(contextData, null, 2)}`;
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await getAI().models.generateContent({
+      model: "gemini-3.1-flash-lite",
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
@@ -331,8 +345,8 @@ ${logContent}
 4. **단계별 조치 가이드 (Step-by-Step Resolution Guide)**: 엔지니어가 현장에서 실행할 수 있는 점검 체크리스트 및 설정 변경 가이드
 5. **예방 및 모니터링 방안 (Preventative Monitoring)**: 재발 방지를 위한 KPI 임계값 설정 및 알람 기준`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await getAI().models.generateContent({
+      model: "gemini-3.1-flash-lite",
       contents: prompt,
       config: {
         systemInstruction: IMS_SYSTEM_INSTRUCTION,
@@ -368,4 +382,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Fatal error during server startup:", err);
+  process.exit(1);
+});
